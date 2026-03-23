@@ -46,8 +46,8 @@
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/Anonym2137/vider-player.git
-cd vider-player
+git clone https://github.com/Anonym2137/vider.info-player.git
+cd vider.info-player
 ```
 
 ### 2. Install dependencies
