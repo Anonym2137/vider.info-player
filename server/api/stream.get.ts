@@ -30,11 +30,11 @@ export default defineEventHandler(async (event) => {
     // Forward Range header from client for seeking support
     const rangeHeader = getHeader(event, 'range')
     const reqHeaders: Record<string, string> = {
-        Cookie: cookieHeader,
         'User-Agent':
             'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
         Referer: 'https://vider.info/',
     }
+    if (cookieHeader) reqHeaders['Cookie'] = cookieHeader
     if (rangeHeader) reqHeaders['Range'] = rangeHeader
 
     let response: Response
@@ -43,6 +43,13 @@ export default defineEventHandler(async (event) => {
     } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err)
         throw createError({ statusCode: 502, message: `Stream fetch failed: ${message}` })
+    }
+
+    if (!response.ok) {
+        throw createError({
+            statusCode: 502,
+            message: `Stream server returned HTTP ${response.status}. Your cookies may be expired — re-enter them in Settings.`,
+        })
     }
 
     // Forward relevant response headers

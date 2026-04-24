@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Embed</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #111;
+            color: #eee;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .video-container {
+            width: 80%;
+            max-width: 1000px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            background: #000;
+        }
+        video {
+            width: 100%;
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="video-container">
+        <!-- Testing the embed via the server proxy with hardcoded cookies -->
+        <!-- URL: https://stream.vider.info/video/500392/v.mp4?uid=0 -->
+        <video controls autoplay name="media">
+            <source src="/api/test-embed" type="video/mp4">
+            Your browser does not support the video tag.
+        </video>
+    </div>
+</body>
+</html>
