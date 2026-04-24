@@ -29,9 +29,23 @@
 
       <div class="toolbar-right">
         <!-- Stream mode badge -->
-        <span class="mode-badge" :class="useNativePlayer ? 'mode-badge--stream' : 'mode-badge--embed'">
-          {{ useNativePlayer ? '▶ Direct Stream' : '◻ Embed' }}
+        <span class="mode-badge" :class="html && !useNativePlayer && !embedUrl ? 'mode-badge--captcha' : useNativePlayer ? 'mode-badge--stream' : 'mode-badge--embed'">
+          {{ html && !useNativePlayer && !embedUrl ? '🔒 Captcha' : useNativePlayer ? '▶ Direct Stream' : '◻ Embed' }}
         </span>
+
+        <!-- Reset Captcha Session Button -->
+        <button
+          v-if="html && !useNativePlayer && !embedUrl"
+          class="tool-btn reset-btn"
+          title="Delete current session and fetch a new one instantly"
+          @click="resetSession"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+            <path d="M3 3v5h5" />
+          </svg>
+          Reset Session
+        </button>
 
         <!-- Toggle between native / embed if both available -->
         <button
@@ -79,18 +93,14 @@
     <!-- Video area -->
     <div class="video-area">
 
-      <!-- Native HTML5 video (direct stream via proxy) -->
+      <!-- Video.js player (direct stream via proxy) -->
       <template v-if="useNativePlayer && proxyUrl">
-        <video
-          ref="videoEl"
-          :key="proxyUrl"
-          :src="proxyUrl"
-          class="native-video"
-          controls
-          preload="metadata"
-          @error="onVideoError"
-          @loadedmetadata="loading = false"
-        />
+        <div ref="vjsContainerEl" class="vjs-container">
+          <video
+            ref="videoEl"
+            class="video-js vjs-big-play-centered vjs-theme-vider"
+          />
+        </div>
         <div v-if="loading" class="video-loading">
           <div class="loading-spinner"/>
           <span>Loading stream…</span>
@@ -124,6 +134,18 @@
         />
       </template>
 
+      <!-- HTML Captcha / Fallback -->
+      <template v-else-if="html">
+        <iframe
+          :srcdoc="html"
+          title="vider.info Captcha"
+          sandbox="allow-scripts allow-same-origin allow-forms"
+          class="player-iframe captcha-iframe"
+          frameborder="0"
+          scrolling="yes"
+        />
+      </template>
+
       <!-- Nothing available -->
       <div v-else class="video-loading">
         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -150,6 +172,10 @@
 </template>
 
 <script setup lang="ts">
+import videojs from 'video.js'
+import type Player from 'video.js/dist/types/player'
+import 'video.js/dist/video-js.css'
+
 interface Props {
   /** Proxy URL to our /api/stream endpoint — preferred playback method */
   proxyUrl: string | null
@@ -157,13 +183,14 @@ interface Props {
   streamUrl: string | null
   /** Embed iframe URL (fallback) */
   embedUrl: string | null
+  html?: string | null
   videoId: string
   originalUrl: string
   initialTitle?: string
 }
 
 const props = withDefaults(defineProps<Props>(), { initialTitle: '' })
-defineEmits<{ close: [] }>()
+const emit = defineEmits<{ close: [], retry: [url: string] }>()
 
 const { addVideo, removeVideo, watchlist, updateTitle } = useViderPlayer()
 
@@ -174,6 +201,9 @@ const isEditing     = ref(false)
 const videoError    = ref('')
 const titleInputEl  = ref<HTMLInputElement | null>(null)
 const videoEl       = ref<HTMLVideoElement | null>(null)
+const vjsContainerEl = ref<HTMLDivElement | null>(null)
+
+let vjsPlayer: Player | null = null
 
 // Prefer native player when a proxy URL exists
 const useNativePlayer = ref(!!props.proxyUrl)
@@ -191,14 +221,161 @@ const isSaved = computed(() => watchlist.value.some((v) => v.id === props.videoI
 const activeUrl = computed(() =>
   useNativePlayer.value && props.streamUrl
     ? props.streamUrl.replace('https://stream.vider.info', 'stream.vider.info')
-    : props.embedUrl?.replace('https://vider.info', 'vider.info') ?? '',
+    : props.embedUrl
+      ? props.embedUrl.replace('https://vider.info', 'vider.info')
+      : props.html ? 'vider.info challenge' : ''
 )
+
+// ── Skip helpers ───────────────────────────────────────────────────────────────
+const SKIP_SECONDS = 15
+
+function skip(delta: number) {
+  if (!vjsPlayer) return
+  const cur = vjsPlayer.currentTime() as number
+  const dur = vjsPlayer.duration() as number
+  vjsPlayer.currentTime(Math.max(0, Math.min(cur + delta, dur)))
+}
+
+function onKeydown(e: KeyboardEvent) {
+  if (!vjsPlayer || !useNativePlayer.value) return
+  // Ignore when typing in inputs
+  const tag = (e.target as HTMLElement)?.tagName
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return
+
+  if (e.key === 'ArrowRight') {
+    e.preventDefault()
+    skip(SKIP_SECONDS)
+  } else if (e.key === 'ArrowLeft') {
+    e.preventDefault()
+    skip(-SKIP_SECONDS)
+  }
+}
+
+// ── Video.js lifecycle ─────────────────────────────────────────────────────────
+function initVideoJs() {
+  if (!videoEl.value || vjsPlayer) return
+
+  vjsPlayer = videojs(videoEl.value, {
+    controls: true,
+    autoplay: false,
+    preload: 'auto',
+    fluid: true,
+    responsive: true,
+    playbackRates: [0.5, 1, 1.25, 1.5, 2],
+    controlBar: {
+      children: [
+        'playToggle',
+        'volumePanel',
+        'currentTimeDisplay',
+        'timeDivider',
+        'durationDisplay',
+        'progressControl',
+        'playbackRateMenuButton',
+        'pictureInPictureToggle',
+        'fullscreenToggle',
+      ],
+    },
+    sources: props.proxyUrl ? [{ src: props.proxyUrl, type: 'video/mp4' }] : [],
+  })
+
+  // Inject skip buttons into the control bar after playToggle
+  const controlBar = (vjsPlayer as any).controlBar
+  if (controlBar) {
+    const Button = videojs.getComponent('Button') as any
+
+    // Skip backward button
+    const skipBackBtn = new Button(vjsPlayer, {
+      clickHandler: () => skip(-SKIP_SECONDS),
+    })
+    skipBackBtn.addClass('vjs-skip-backward')
+    skipBackBtn.controlText(`Skip back ${SKIP_SECONDS}s`)
+    const bgIcon = document.createElement('span')
+    bgIcon.className = 'vjs-skip-icon'
+    bgIcon.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+          <path d="M12.5 3C7.81 3 4 6.81 4 11.5H1l4 4 4-4H6c0-3.58 2.92-6.5 6.5-6.5s6.5 2.92 6.5 6.5-2.92 6.5-6.5 6.5c-1.56 0-2.99-.55-4.11-1.47l-1.41 1.41C8.82 19.36 10.58 20 12.5 20c4.69 0 8.5-3.81 8.5-8.5S17.19 3 12.5 3z"/>
+          <text x="12.5" y="14.5" text-anchor="middle" font-size="7" font-weight="bold" fill="currentColor">${SKIP_SECONDS}</text>
+        </svg>`
+    skipBackBtn.el().appendChild(bgIcon)
+    controlBar.addChild(skipBackBtn, {}, 1) // after playToggle (index 0)
+
+    // Skip forward button
+    const skipFwdBtn = new Button(vjsPlayer, {
+      clickHandler: () => skip(SKIP_SECONDS),
+    })
+    skipFwdBtn.addClass('vjs-skip-forward')
+    skipFwdBtn.controlText(`Skip forward ${SKIP_SECONDS}s`)
+    const fgIcon = document.createElement('span')
+    fgIcon.className = 'vjs-skip-icon'
+    fgIcon.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+          <path d="M11.5 3C16.19 3 20 6.81 20 11.5H23l-4 4-4-4h3c0-3.58-2.92-6.5-6.5-6.5S5 7.92 5 11.5 7.92 18 11.5 18c1.56 0 2.99-.55 4.11-1.47l1.41 1.41C15.18 19.36 13.42 20 11.5 20 6.81 20 3 16.19 3 11.5S6.81 3 11.5 3z"/>
+          <text x="11.5" y="14.5" text-anchor="middle" font-size="7" font-weight="bold" fill="currentColor">${SKIP_SECONDS}</text>
+        </svg>`
+    skipFwdBtn.el().appendChild(fgIcon)
+    controlBar.addChild(skipFwdBtn, {}, 2) // after skipBackBtn
+  }
+
+  vjsPlayer.on('loadedmetadata', () => {
+    loading.value = false
+  })
+
+  vjsPlayer.on('error', () => {
+    loading.value = false
+    videoError.value = 'Could not load the stream. Your cookies may be expired or the video is restricted. Try embed mode.'
+  })
+}
+
+function disposeVideoJs() {
+  if (vjsPlayer) {
+    vjsPlayer.dispose()
+    vjsPlayer = null
+  }
+}
+
+async function resetSession() {
+  await $fetch('/api/cookies', { method: 'DELETE' })
+  emit('close')
+}
+
+function handleMessage(e: MessageEvent) {
+  console.log(e.data)
+  if (e.data?.type === 'CAPTCHA_SOLVED') {
+    emit('retry', props.originalUrl)
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('message', handleMessage)
+  window.addEventListener('keydown', onKeydown)
+  if (useNativePlayer.value && props.proxyUrl) {
+    nextTick(initVideoJs)
+  }
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('message', handleMessage)
+  window.removeEventListener('keydown', onKeydown)
+  disposeVideoJs()
+})
 
 // ── Watchers ───────────────────────────────────────────────────────────────────
 watch([() => props.proxyUrl, () => props.embedUrl], () => {
   loading.value = true
   videoError.value = ''
+  disposeVideoJs()
   useNativePlayer.value = !!props.proxyUrl
+  if (useNativePlayer.value && props.proxyUrl) {
+    nextTick(initVideoJs)
+  }
+})
+
+watch(useNativePlayer, (native) => {
+  loading.value = true
+  videoError.value = ''
+  if (native && props.proxyUrl) {
+    nextTick(initVideoJs)
+  } else {
+    disposeVideoJs()
+  }
 })
 
 // ── Methods ────────────────────────────────────────────────────────────────────
@@ -230,11 +407,6 @@ function saveTitle() {
     if (isSaved.value) updateTitle(props.videoId, currentTitle.value)
   }
   isEditing.value = false
-}
-
-function onVideoError() {
-  loading.value = false
-  videoError.value = 'Could not load the stream. Your cookies may be expired or the video is restricted. Try embed mode.'
 }
 </script>
 
@@ -321,6 +493,26 @@ function onVideoError() {
   color: #3b82f6;
   border: 1px solid rgba(59,130,246,0.25);
 }
+.mode-badge--captcha {
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+.reset-btn {
+  width: auto;
+  padding: 0 10px;
+  background: rgba(239, 68, 68, 0.12);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  font-size: 12px;
+  font-weight: 600;
+  gap: 6px;
+  display: flex;
+}
+.reset-btn:hover {
+  background: rgba(239, 68, 68, 0.25);
+}
 
 .tool-btn {
   width: 32px; height: 32px; border-radius: 8px;
@@ -335,16 +527,18 @@ function onVideoError() {
 /* ── Video area ── */
 .video-area {
   position: relative;
-  padding-top: 56.25%;
   background: #000;
 }
 
 .player-wrapper--fullscreen .video-area {
-  padding-top: 0;
   flex: 1;
 }
 
-.native-video,
+/* Video.js container */
+.vjs-container {
+  width: 100%;
+}
+
 .player-iframe {
   position: absolute;
   inset: 0;
@@ -354,10 +548,24 @@ function onVideoError() {
   background: #000;
 }
 
-.player-wrapper--fullscreen .native-video,
+/* For iframe modes, keep 16:9 aspect via padding trick */
+.video-area:has(.player-iframe) {
+  padding-top: 56.25%;
+}
+
+.captcha-iframe {
+  background: #fff;
+}
+
 .player-wrapper--fullscreen .player-iframe {
   position: static;
   flex: 1;
+}
+
+.player-wrapper--fullscreen .video-area:has(.player-iframe) {
+  padding-top: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .video-loading {
@@ -417,4 +625,118 @@ function onVideoError() {
 }
 
 .player-source { font-size: 12px; color: var(--text-muted); }
+</style>
+
+<!-- Unscoped: Video.js theme overrides for dark mode -->
+<style>
+.vjs-theme-vider {
+  --vjs-theme-vider--primary: #8b5cf6;
+  --vjs-theme-vider--secondary: rgba(139, 92, 246, 0.6);
+  font-family: 'Inter', sans-serif;
+}
+
+.vjs-theme-vider .vjs-control-bar {
+  background: linear-gradient(0deg, rgba(0,0,0,0.85) 0%, transparent 100%);
+  height: 44px;
+  padding: 0 4px;
+}
+
+.vjs-theme-vider .vjs-play-progress,
+.vjs-theme-vider .vjs-volume-level {
+  background: var(--vjs-theme-vider--primary);
+}
+
+.vjs-theme-vider .vjs-load-progress div {
+  background: rgba(255,255,255,0.15);
+}
+
+.vjs-theme-vider .vjs-slider:focus {
+  text-shadow: none;
+  box-shadow: 0 0 0 2px var(--vjs-theme-vider--secondary);
+}
+
+.vjs-theme-vider .vjs-big-play-button {
+  background: rgba(139, 92, 246, 0.8);
+  border: none;
+  border-radius: 50%;
+  width: 64px;
+  height: 64px;
+  line-height: 64px;
+  font-size: 28px;
+  transition: all 0.2s ease;
+}
+
+.vjs-theme-vider .vjs-big-play-button:hover {
+  background: rgba(139, 92, 246, 1);
+  transform: scale(1.1);
+}
+
+.vjs-theme-vider .vjs-time-control {
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 44px;
+}
+
+.vjs-theme-vider .vjs-playback-rate .vjs-playback-rate-value {
+  font-size: 12px;
+  line-height: 44px;
+}
+
+.vjs-theme-vider .vjs-menu-button-popup .vjs-menu .vjs-menu-content {
+  background: rgba(20, 20, 30, 0.95);
+  border-radius: 8px;
+  backdrop-filter: blur(12px);
+}
+
+.vjs-theme-vider .vjs-menu li.vjs-selected {
+  background: var(--vjs-theme-vider--primary);
+  color: #fff;
+}
+
+.vjs-theme-vider .vjs-menu li:hover {
+  background: rgba(139, 92, 246, 0.3);
+  color: #fff;
+}
+
+.vjs-theme-vider .vjs-progress-control:hover .vjs-progress-holder {
+  font-size: 14px;
+}
+
+/* Hide the default video.js poster to keep it clean */
+.vjs-theme-vider .vjs-poster {
+  display: none;
+}
+
+/* Skip forward/backward buttons */
+.vjs-theme-vider .vjs-skip-backward,
+.vjs-theme-vider .vjs-skip-forward {
+  cursor: pointer;
+  width: 44px !important;
+}
+
+/* Hide standard icon placeholder just for these custom buttons to free up center space */
+.vjs-theme-vider .vjs-skip-backward .vjs-icon-placeholder,
+.vjs-theme-vider .vjs-skip-forward .vjs-icon-placeholder {
+  display: none !important;
+}
+
+.vjs-theme-vider .vjs-skip-icon {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.85;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.vjs-theme-vider .vjs-skip-backward:hover .vjs-skip-icon,
+.vjs-theme-vider .vjs-skip-forward:hover .vjs-skip-icon {
+  opacity: 1;
+  transform: scale(1.15);
+}
+
+.vjs-theme-vider .vjs-skip-icon svg text {
+  font-family: 'Inter', Arial, sans-serif;
+}
 </style>

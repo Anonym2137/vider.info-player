@@ -4,7 +4,7 @@ import { getCookies } from '../utils/cookieStore'
 export default defineEventHandler(async (event) => {
     const rawUrl = 'https://stream.vider.info/video/500392/v.mp4?uid=0'
 
-    const cookieHeader = getCookies()
+    const cookieHeader = await getCookies()
 
     const rangeHeader = getHeader(event, 'range')
     const reqHeaders: Record<string, string> = {

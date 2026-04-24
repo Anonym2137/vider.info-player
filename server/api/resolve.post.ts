@@ -1,4 +1,4 @@
-import { getCookies } from '../utils/cookieStore'
+import { getCookies, parseAndSaveSetCookie } from '../utils/cookieStore'
 
 /**
  * POST /api/resolve
@@ -17,7 +17,7 @@ export default defineEventHandler(async (event) => {
     // Ensure absolute URL — user might paste without https://
     const targetUrl = url.startsWith('http') ? url : `https://${url}`
 
-    const cookieHeader = getCookies()
+    const cookieHeader = await getCookies()
 
     // Use native fetch so non-2xx responses don't throw — we still want the body.
     // Do NOT set Accept-Encoding manually; Node/undici decompresses automatically.
@@ -37,6 +37,12 @@ export default defineEventHandler(async (event) => {
     } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err)
         throw createError({ statusCode: 502, message: `Network error fetching vider.info page: ${message}` })
+    }
+
+    // Automatically parse and save any cookies returned by vider.info
+    const setCookies = response.headers.getSetCookie?.() || []
+    if (setCookies.length > 0) {
+        parseAndSaveSetCookie(setCookies)
     }
 
     // Read body regardless of status so we can attempt extraction even on soft-errors
@@ -102,11 +108,15 @@ export default defineEventHandler(async (event) => {
     const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i)
     const title = titleMatch?.[1] ? titleMatch[1].replace(' – Vider', '').replace(' - Vider', '').trim() : ''
 
+    const hostUrl = getRequestURL(event).origin
+
     return {
         streamUrl,   // direct MP4 – null if not found
         embedUrl,    // vider.info embed fallback
         title,
-        cookiesConfigured: !!cookieHeader,
         upstreamStatus: response.status,
+        html: `<base href="https://vider.info/">\n` + html
+            .replace(/ca-pt-cha\.png(\?[0-9a-zA-Z&_=]*)?/gi, `ca-pt-cha.png?_cb=${Date.now()}`)
+            .replace(/<form method="post"[^>]*>/i, `<form method="post" action="${hostUrl}/api/captcha">\n<input type="hidden" name="targetUrl" value="${targetUrl}">`),
     }
 })

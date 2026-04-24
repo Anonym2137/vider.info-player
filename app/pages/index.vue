@@ -24,7 +24,7 @@
 
         <!-- URL Input -->
         <section class="input-section" aria-label="Video input">
-          <UrlInput @play="handlePlay" />
+          <UrlInput ref="urlInputRef" @play="handlePlay" />
         </section>
 
         <!-- Active Player -->
@@ -37,7 +37,9 @@
               :video-id="currentVideo.videoId"
               :original-url="currentVideo.originalUrl"
               :initial-title="currentVideo.title"
+              :html="currentVideo.html"
               @close="currentVideo = null"
+              @retry="handleRetry"
             />
           </section>
         </Transition>
@@ -108,9 +110,11 @@ interface CurrentVideo {
   videoId: string
   originalUrl: string
   title: string
+  html?: string | null
 }
 
 const currentVideo = ref<CurrentVideo | null>(null)
+const urlInputRef = ref<any>(null)
 
 interface PlayPayload {
   streamUrl: string | null
@@ -118,6 +122,7 @@ interface PlayPayload {
   proxyUrl: string | null
   title: string
   originalUrl: string
+  html?: string | null
 }
 
 function handlePlay(payload: PlayPayload) {
@@ -137,12 +142,20 @@ function handlePlay(payload: PlayPayload) {
     videoId,
     originalUrl: payload.originalUrl,
     title: watchlist.value.find((v) => v.id === videoId)?.title ?? payload.title,
+    html: payload.html,
   }
 
   // Scroll to player
   nextTick(() => {
     document.querySelector('.player-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   })
+}
+
+function handleRetry(url: string) {
+  currentVideo.value = null
+  if (urlInputRef.value) {
+    urlInputRef.value.retry(url)
+  }
 }
 
 function playFromWatchlist(video: ViderVideo) {

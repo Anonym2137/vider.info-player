@@ -12,16 +12,7 @@
       </div>
     </div>
 
-    <!-- Cookie warning banner -->
-    <Transition name="fade">
-      <div v-if="cookieStatus === 'missing'" class="cookie-banner">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
-          <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
-        </svg>
-        <span>Auth cookies not set — videos may not load. <NuxtLink to="/settings" class="cookie-link">Configure cookies →</NuxtLink></span>
-      </div>
-    </Transition>
+
 
     <form class="input-row" @submit.prevent="handleSubmit">
       <div
@@ -110,14 +101,10 @@ interface ResolveResponse {
   streamUrl: string | null
   embedUrl: string | null
   title: string
-  cookiesConfigured: boolean
+  html: string
 }
 
-interface CookieStatus {
-  configured: boolean
-  spfpSet: boolean
-  spol_tgSet: boolean
-}
+
 
 const emit = defineEmits<{
   play: [payload: {
@@ -126,6 +113,7 @@ const emit = defineEmits<{
     proxyUrl: string | null
     title: string
     originalUrl: string
+    html?: string
   }]
 }>()
 
@@ -135,17 +123,7 @@ const isFocused = ref(false)
 const resolving = ref(false)
 const resolvedInfo = ref('')
 
-// ── Check cookie status on mount ─────────────────────────────────────────────
-const cookieStatus = ref<'unknown' | 'missing' | 'ok'>('unknown')
 
-onMounted(async () => {
-  try {
-    const status = await $fetch<CookieStatus>('/api/cookies')
-    cookieStatus.value = status.configured ? 'ok' : 'missing'
-  } catch {
-    cookieStatus.value = 'missing'
-  }
-})
 
 // ── Submit handler ────────────────────────────────────────────────────────────
 async function handleSubmit() {
@@ -169,8 +147,8 @@ async function handleSubmit() {
       body: { url: raw },
     })
 
-    if (!data.streamUrl && !data.embedUrl) {
-      error.value = 'Could not find a playable stream on this page. Make sure your vider.info cookies are configured.'
+    if (!data.streamUrl && !data.embedUrl && !data.html) {
+      error.value = 'Could not find stream and no HTML was returned.'
       return
     }
 
@@ -184,8 +162,7 @@ async function handleSubmit() {
       resolvedInfo.value = data.streamUrl.replace('https://stream.vider.info', 'stream.vider.info').slice(0, 60) + '…'
     }
 
-    // Update cookie status if the server told us
-    if (data.cookiesConfigured) cookieStatus.value = 'ok'
+
 
     emit('play', {
       streamUrl: data.streamUrl,
@@ -193,6 +170,7 @@ async function handleSubmit() {
       proxyUrl,
       title:     data.title || `Video from ${raw}`,
       originalUrl: raw,
+      html:      data.html,
     })
   } catch (err: unknown) {
     const msg = (err as { data?: { message?: string }; message?: string })?.data?.message
@@ -203,6 +181,13 @@ async function handleSubmit() {
     resolving.value = false
   }
 }
+
+defineExpose({
+  retry: (retryUrl: string) => {
+    url.value = retryUrl
+    handleSubmit()
+  }
+})
 
 // ── Auto-submit on paste when URL looks valid ─────────────────────────────────
 function handlePaste(e: ClipboardEvent) {
@@ -261,26 +246,7 @@ function handlePaste(e: ClipboardEvent) {
   font-size: 12px;
 }
 
-/* Cookie warning */
-.cookie-banner {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  background: rgba(251, 191, 36, 0.08);
-  border: 1px solid rgba(251, 191, 36, 0.25);
-  border-radius: var(--radius-md);
-  color: #fbbf24;
-  font-size: 13px;
-  margin-bottom: 14px;
-}
 
-.cookie-link {
-  color: #fbbf24;
-  font-weight: 600;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
 
 /* Input row */
 .input-row {

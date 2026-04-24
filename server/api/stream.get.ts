@@ -25,7 +25,7 @@ export default defineEventHandler(async (event) => {
         throw createError({ statusCode: 403, message: 'Only vider.info stream URLs are allowed' })
     }
 
-    const cookieHeader = getCookies()
+    const cookieHeader = await getCookies()
 
     // Forward Range header from client for seeking support
     const rangeHeader = getHeader(event, 'range')

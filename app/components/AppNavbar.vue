@@ -28,13 +28,7 @@
           Watchlist
           <span v-if="watchlist.length > 0" class="badge">{{ watchlist.length }}</span>
         </NuxtLink>
-        <NuxtLink to="/settings" class="nav-link" active-class="nav-link--active">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="3"/>
-            <path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/>
-          </svg>
-          Settings
-        </NuxtLink>
+
       </nav>
     </div>
   </header>

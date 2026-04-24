@@ -6,19 +6,15 @@
 |---|---|
 | ![Home page](public/home.png) | ![Video player](public/player.png) |
 
-| Watchlist | Settings |
-|---|---|
-| ![Watchlist](public/watchlist.png) | ![Settings](public/settings.png) |
-
 
 ---
 
 ## ✨ Features
 
 - 🔗 **Paste & Play** — drop any `vider.info` link into the input; the app resolves the stream URL automatically
-- 📺 **Native video player** — full controls, seeking, and fullscreen support via HTML5 `<video>` with Range request proxying
+- 📺 **Custom Video.js player** — full custom-themed controls, playback speed, ±15s skip buttons, PiP, and fullscreen support
+- 🧩 **Seamless Captcha bypass** — detects human-verification challenges and embeds them securely in-player, auto-refreshing once solved without breaking the proxy session
 - 📋 **Watchlist** — save and manage videos for later
-- ⚙️ **Settings** — configure your vider.info auth cookies so private videos work
 - 🌙 **Dark, glassmorphism UI** — built with Inter & Space Grotesk, smooth animations
 - 🔒 **Privacy-first proxy** — all stream requests are routed through the server with your cookies; the browser never talks to vider.info directly
 
@@ -64,31 +60,7 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 
----
 
-## 🍪 Cookie Setup (Required for private/member videos)
-
-Vider Player proxies requests to vider.info using your session cookies so that member-only videos play correctly.
-
-### How to get your cookies
-
-1. Go to [vider.info](https://vider.info) in your browser
-2. Open **DevTools** → **Application** → **Cookies** → `https://vider.info`
-3. Copy the values of:
-   - `spfp`
-   - `spol_tg`
-
-![DevTools cookies panel](public/cookies.png)
-
-### How to set your cookies in the app
-
-1. Open **Settings** (gear icon in the navbar)
-2. Paste the `spfp` and `spol_tg` values into the respective fields
-3. Click **Save** — the server stores them in memory for the session
-
-> **Note:** Cookies are stored in server memory only and are never written to disk or sent to any third party. They reset when the server restarts.
-
----
 
 ## 🎞️ How to Play a Video
 
@@ -97,6 +69,7 @@ Vider Player proxies requests to vider.info using your session cookies so that m
    (e.g. `https://vider.info/video/12345/movie-title`)
 3. Click **Play** (or press Enter)
 4. The app resolves the direct stream URL and loads the player
+   - *Note: If a Captcha is detected, a challenge box will automatically load in place of the video. Just solve it and click "Wchodzę" to start playing.*
 
 ---
 
@@ -125,20 +98,19 @@ vider-player/
 │   │   ├── AppNavbar.vue      # Top navigation bar
 │   │   ├── UrlInput.vue       # URL paste & resolve input
 │   │   ├── VideoCard.vue      # Watchlist video card
-│   │   └── VideoPlayer.vue    # HTML5 video player with proxy
+│   │   └── VideoPlayer.vue    # Video.js player with proxy & captcha wrapper
 │   ├── pages/
 │   │   ├── index.vue          # Home / player page
-│   │   ├── watchlist.vue      # Saved videos
-│   │   └── settings.vue       # Cookie configuration
+│   │   └── watchlist.vue      # Saved videos
 │   └── assets/css/main.css    # Global styles & design tokens
 ├── server/
 │   ├── api/
+│   │   ├── captcha.post.ts    # Securely proxies Captcha form submissions to vider.info
+│   │   ├── cookies.delete.ts  # Clears backend session cookies manually
 │   │   ├── resolve.post.ts    # Extracts stream URL from a vider.info page
-│   │   ├── stream.get.ts      # Proxies video bytes (handles Range requests)
-│   │   ├── cookies.get.ts     # Returns whether cookies are configured
-│   │   └── cookies.post.ts    # Saves spfp / spol_tg cookies to memory
+│   │   └── stream.get.ts      # Proxies video bytes (handles Range requests)
 │   └── utils/
-│       └── cookieStore.ts     # In-memory cookie store
+│       └── cookieStore.ts     # In-memory session synchronization store
 ├── nuxt.config.ts
 └── package.json
 ```
@@ -149,7 +121,7 @@ vider-player/
 
 | Endpoint | Method | Description |
 |---|---|---|
-| `/api/resolve` | `POST` | Accepts `{ url }`, returns `{ streamUrl, embedUrl, title }` |
+| `/api/resolve` | `POST` | Accepts `{ url }`, returns `{ streamUrl, embedUrl, html, title }` |
 | `/api/stream` | `GET` | Proxies video bytes; pass `?url=<encoded-stream-url>` |
-| `/api/cookies` | `GET` | Returns `{ configured: boolean }` |
-| `/api/cookies` | `POST` | Accepts `{ spfp, spol_tg }`, stores cookies in memory |
+| `/api/captcha` | `POST` | Intercepts iframe Captcha solutions to synchronize global cookies |
+| `/api/cookies` | `DELETE` | Triggers a hard reset of the local authenticated session variables |
