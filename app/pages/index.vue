@@ -30,7 +30,8 @@
         <!-- Active Player -->
         <Transition name="fade">
           <section v-if="currentVideo" class="player-section" aria-label="Video player">
-            <VideoPlayer
+            <ClientOnly>
+              <VideoPlayer
               :proxy-url="currentVideo.proxyUrl"
               :stream-url="currentVideo.streamUrl"
               :embed-url="currentVideo.embedUrl"
@@ -41,9 +42,10 @@
               @close="currentVideo = null"
               @retry="handleRetry"
             />
+          </ClientOnly>
           </section>
         </Transition>
-
+        
         <!-- Recent Watchlist Preview -->
         <section v-if="recentVideos.length > 0" class="recent-section" aria-label="Recent videos">
           <div class="section-header">

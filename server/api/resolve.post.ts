@@ -1,4 +1,6 @@
 import { getCookies, parseAndSaveSetCookie } from '../utils/cookieStore'
+import { JSDOM } from 'jsdom'
+import fs from 'fs'
 
 /**
  * POST /api/resolve
@@ -20,7 +22,6 @@ export default defineEventHandler(async (event) => {
     const cookieHeader = await getCookies()
 
     // Use native fetch so non-2xx responses don't throw — we still want the body.
-    // Do NOT set Accept-Encoding manually; Node/undici decompresses automatically.
     let response: Response
     try {
         response = await fetch(targetUrl, {
@@ -54,50 +55,33 @@ export default defineEventHandler(async (event) => {
         throw createError({ statusCode: 502, message: `Failed to read vider.info response body: ${message}` })
     }
 
-
     if (!response.ok && html.length < 500) {
-        // Short error body — the upstream actually rejected us
         throw createError({
             statusCode: 502,
             message: `vider.info returned HTTP ${response.status} ${response.statusText}. Check that your cookies are valid.`,
         })
     }
 
-    // ─────────────────────────────────────────────────────────────────────────────
-    // Extract the stream URL from the HTML.
-    //
-    // The page contains TWO different video IDs in separate tags:
-    //   - <link rel="video_src"> — LEGACY / WRONG (old Flash fallback, different ID)
-    //   - <link itemprop="embedURL"> — CORRECT (what JWPlayer / <video> actually uses)
-    //   - JSON-LD "embedUrl"        — CORRECT (same URL as embedURL)
-    //
-    // The value after `file=` in the embedURL/JSON-LD is the correct stream URL.
-    // Priority: structured metadata first → generic ?file= last (to avoid video_src).
-    // ─────────────────────────────────────────────────────────────────────────────
-    const patterns = [
-        // #1 — <link itemprop="embedURL" href="...player.swf?file=STREAM_URL">
-        // This is the canonical embed metadata and always has the correct video ID
-        /<link[^>]+itemprop=["']embedURL["'][^>]+href=["'][^"']*?[?&]file=(https?:\/\/stream\.vider\.info\/[^"'&\s]+)/i,
-        // #2 — JSON-LD "embedUrl": "...player.swf?file=STREAM_URL"
-        /"embedUrl"\s*:\s*"[^"]*?[?&]file=(https?:\/\/stream\.vider\.info\/[^"\\]+)/i,
-        // #3 — plain jwplayer setup file property (future-proofing)
-        /jwplayer[^;]{0,800}file\s*:\s*["'`](https?:\/\/stream\.vider\.info\/[^"'`\s]+)/i,
-        // #4 — <source src="...">
-        /<source[^>]+src=["'](https?:\/\/stream\.vider\.info\/[^"']+)/i,
-        // #5 — generic ?file= (excludes video_src relation to skip the legacy tag)
-        /<link(?![^>]*rel=["']video_src["'])[^>]*[?&]file=(https?:\/\/stream\.vider\.info\/[^"'&\s<>]+)/i,
-        // #6 — bare .mp4 URL anywhere (last resort)
-        /(https?:\/\/stream\.vider\.info\/video\/[^"'\s<>]+\.mp4[^"'\s<>]*)/i,
-    ]
+    /** Pull everything after `?file=` or `&file=` from a URL string */
+    const extractFileParam = (href: string | null | undefined): string | null => {
+        if (!href) return null
+        const match = href.match(/[?&]file=(https?:\/\/stream\.vider\.info\/[^&\s"'<>]+)/i)
+        return match?.[1] ?? null
+    }
 
-    let streamUrl: string | null = null
-    for (const pattern of patterns) {
-        const m = html.match(pattern)
-        if (m?.[1]) {
-            // Unescape JSON-escaped slashes
-            streamUrl = m[1].replace(/\\\\/g, '').replace(/\\\//g, '/')
-            break
-        }
+    /** Scan arbitrary text for any stream.vider.info URL */
+    const extractStreamUrl = (text: string): string | null => {
+        const m = text.match(/(https?:\/\/stream\.vider\.info\/[^"'\s<>]+)/i)
+        return m?.[1] ?? null
+    }
+
+    const dom = new JSDOM(html)
+    const document = dom.window.document
+
+    let fileId = document.querySelector(".badge_favourites")?.getAttribute("data-file-id")
+    let streamUrl = null
+    if (fileId) {
+        streamUrl = `https://stream.vider.info/video/${fileId}/v.mp4?uid=0`
     }
 
     // Also extract the embed URL if present
@@ -105,14 +89,16 @@ export default defineEventHandler(async (event) => {
     const embedUrl = embedMatch?.[1] ? `https://vider.info/embed/${embedMatch[1]}` : null
 
     // Extract title from <title> tag
-    const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i)
-    const title = titleMatch?.[1] ? titleMatch[1].replace(' – Vider', '').replace(' - Vider', '').trim() : ''
+    const title = (document.querySelector('title')?.textContent ?? '')
+        .replace(' – Vider', '').replace(' - Vider', '')
+        .replace(' - Video w Vider.info', '').replace(' – Video w Vider.info', '')
+        .trim()
 
     const hostUrl = getRequestURL(event).origin
 
     return {
-        streamUrl,   // direct MP4 – null if not found
-        embedUrl,    // vider.info embed fallback
+        streamUrl,
+        embedUrl,
         title,
         upstreamStatus: response.status,
         html: `<base href="https://vider.info/">\n` + html
