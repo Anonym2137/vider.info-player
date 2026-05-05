@@ -62,19 +62,6 @@ export default defineEventHandler(async (event) => {
         })
     }
 
-    /** Pull everything after `?file=` or `&file=` from a URL string */
-    const extractFileParam = (href: string | null | undefined): string | null => {
-        if (!href) return null
-        const match = href.match(/[?&]file=(https?:\/\/stream\.vider\.info\/[^&\s"'<>]+)/i)
-        return match?.[1] ?? null
-    }
-
-    /** Scan arbitrary text for any stream.vider.info URL */
-    const extractStreamUrl = (text: string): string | null => {
-        const m = text.match(/(https?:\/\/stream\.vider\.info\/[^"'\s<>]+)/i)
-        return m?.[1] ?? null
-    }
-
     const dom = new JSDOM(html)
     const document = dom.window.document
 

@@ -7,6 +7,20 @@ export default defineNuxtConfig({
     optimizeDeps: {
       include: ['video.js'],
     },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules')) {
+              if (id.includes('video.js')) {
+                return 'videojs'
+              }
+              return 'vendor'
+            }
+          }
+        }
+      }
+    }
   },
 
   app: {

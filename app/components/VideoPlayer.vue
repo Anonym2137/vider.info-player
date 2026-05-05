@@ -211,7 +211,6 @@ const useNativePlayer = ref(!!props.proxyUrl)
 const currentTitle = ref(
   watchlist.value.find((v) => v.id === props.videoId)?.title
     || props.initialTitle
-    || `Video ${props.videoId.slice(0, 8)}`,
 )
 const editTitle = ref(currentTitle.value)
 

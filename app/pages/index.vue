@@ -47,44 +47,46 @@
         </Transition>
         
         <!-- Recent Watchlist Preview -->
-        <section v-if="recentVideos.length > 0" class="recent-section" aria-label="Recent videos">
-          <div class="section-header">
-            <h2 class="section-title">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-              </svg>
-              Recently Added
-            </h2>
-            <NuxtLink to="/watchlist" class="see-all-link">
-              See all ({{ watchlist.length }})
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="9 18 15 12 9 6"/>
-              </svg>
-            </NuxtLink>
-          </div>
-
-          <div class="cards-grid">
-            <VideoCard
-              v-for="video in recentVideos"
-              :key="video.id"
-              :video="video"
-              :active="currentVideo?.videoId === video.id"
-              @play="playFromWatchlist"
-              @remove="removeVideo"
-            />
-          </div>
-        </section>
-
-        <!-- Empty state when nothing saved -->
-        <section v-else-if="!currentVideo" class="empty-state" aria-label="Getting started">
-          <div class="empty-icon">
-            <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-              <path d="M15 10l4.553-2.069A1 1 0 0 1 21 8.82v6.362a1 1 0 0 1-1.447.894L15 14M3 8h12a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2z"/>
-            </svg>
-          </div>
-          <h3>Start watching</h3>
-          <p>Paste a vider.info URL above to start watching instantly.<br/>Your videos will be saved to your watchlist.</p>
-        </section>
+         <ClientOnly>
+           <section v-if="recentVideos.length > 0" class="recent-section" aria-label="Recent videos">
+             <div class="section-header">
+               <h2 class="section-title">
+                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                   <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                  </svg>
+                  Recently Added
+                </h2>
+                <NuxtLink to="/watchlist" class="see-all-link">
+                  See all ({{ watchlist.length }})
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="9 18 15 12 9 6"/>
+                  </svg>
+                </NuxtLink>
+              </div>
+              
+              <div class="cards-grid">
+                <VideoCard
+                v-for="video in recentVideos"
+                :key="video.id"
+                :video="video"
+                :active="currentVideo?.videoId === video.id"
+                @play="playFromWatchlist"
+                @remove="removeVideo"
+                />
+              </div>
+            </section>
+            
+            <!-- Empty state when nothing saved -->
+            <section v-else-if="!currentVideo" class="empty-state" aria-label="Getting started">
+              <div class="empty-icon">
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <path d="M15 10l4.553-2.069A1 1 0 0 1 21 8.82v6.362a1 1 0 0 1-1.447.894L15 14M3 8h12a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2z"/>
+                </svg>
+              </div>
+              <h3>Start watching</h3>
+              <p>Paste a vider.info URL above to start watching instantly.<br/>Your videos will be saved to your watchlist.</p>
+            </section>
+          </ClientOnly>
 
       </div>
     </main>
@@ -129,10 +131,11 @@ interface PlayPayload {
 
 function handlePlay(payload: PlayPayload) {
   // Derive a video ID from the original URL or embed URL
-  const idMatch = (payload.embedUrl ?? payload.originalUrl).match(
+  const idMatch = (payload.originalUrl ?? payload.embedUrl).match(
     /vider\.info\/(?:embed|vid|video|v)\/([a-zA-Z0-9_+\-]+)/
   )
-  const videoId = idMatch?.[1] ?? payload.originalUrl.split('/').pop() ?? 'unknown'
+
+  const videoId = idMatch?.[1]?.slice(2) ?? payload.originalUrl.split('/').pop() ?? 'unknown'
 
   // Save to watchlist
   addVideo(payload.originalUrl, payload.title || `Video ${videoId.slice(0, 8)}`)
@@ -161,6 +164,10 @@ function handleRetry(url: string) {
 }
 
 function playFromWatchlist(video: ViderVideo) {
+  if(urlInputRef.value) {
+    urlInputRef.value.retry(video.originalUrl)
+  }
+
   currentVideo.value = {
     streamUrl: null,
     proxyUrl:  null,

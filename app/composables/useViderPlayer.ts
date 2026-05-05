@@ -30,11 +30,12 @@ export function parseViderUrl(input: string): { embedUrl: string; videoId: strin
     const raw = input.trim()
 
     // ── Already a vider.info embed URL ──────────────────────────────────────────
-    const embedMatch = raw.match(/vider\.info\/embed\/([a-zA-Z0-9_-]+)/)
+    const embedMatch = raw.match(/vider\.info\/vid\/([a-zA-Z0-9_+\-]+)/i)
+    //console.log(`https://vider.info/embed/video/${embedMatch}`)
     if (embedMatch?.[1]) {
         return {
             videoId: embedMatch[1],
-            embedUrl: `https://vider.info/embed/${embedMatch[1]}`,
+            embedUrl: `https://vider.info/embed/video/${embedMatch[1].slice(2)}`,
         }
     }
 
