@@ -65,23 +65,24 @@ export default defineEventHandler(async (event) => {
     const dom = new JSDOM(html)
     const document = dom.window.document
 
-    let fileId = document.querySelector(".badge_favourites")?.getAttribute("data-file-id")
+    let fileUrl = document.querySelector('link[rel="video_src"]')?.getAttribute("href")
+    const fileId = fileUrl?.match(/\/video\/([\d,]+)\//)?.[1]?.replace(',', '.');
     let streamUrl = null
     if (fileId) {
-        streamUrl = `https://stream.vider.info/video/${fileId}/v.mp4?uid=0`
+        streamUrl = `https://stream.vider.info/video/${parseFloat(fileId) * 5}/v.mp4?uid=0`
     }
 
     // Also extract the embed URL if present
-    const embedMatch = html.match(/vider\.info\/embed\/([a-zA-Z0-9_+\-]+)/i)
-    const embedUrl = embedMatch?.[1] ? `https://vider.info/embed/${embedMatch[1]}` : null
+    const embedId = document.querySelector("#file-download")?.getAttribute("data-file-id") || null
+    const embedUrl = fileId ? `https://vider.pl/embed/video/${fileId}` : null;
 
     // Extract title from <title> tag
     const title = (document.querySelector('title')?.textContent ?? '')
         .replace(' – Vider', '').replace(' - Vider', '')
         .replace(' - Video w Vider.info', '').replace(' – Video w Vider.info', '')
-        .trim()
+        .trim();
 
-    const hostUrl = getRequestURL(event).origin
+    const hostUrl = getRequestURL(event).origin;
 
     return {
         streamUrl,
